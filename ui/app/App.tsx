@@ -4,12 +4,12 @@ import { Tabs, Tab } from "@dynatrace/strato-components/navigation";
 import { ToastContainer } from "@dynatrace/strato-components/notifications";
 import { Link } from "react-router-dom";
 import { AnomalyDetection } from "./pages/AnomalyDetection";
-import { LogMonitoring } from "./pages/LogMonitoring";
+import { DiskAnomalySettings } from "./pages/DiskAnomalySettings";
 import { TABS } from "./config";
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
-  "anomaly-detection": AnomalyDetection,
-  "log-monitoring": LogMonitoring,
+  "infrastructure-anomaly": AnomalyDetection,
+  "disk-anomaly": DiskAnomalySettings,
 };
 
 export const App = () => {

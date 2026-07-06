@@ -6,9 +6,9 @@ import { useEntities } from "../hooks/useEntities";
 import { useSettings } from "../hooks/useSettings";
 import { TABS } from "../config";
 
-const TAB = TABS.find((t) => t.id === "infrastructure-anomaly")!;
+const TAB = TABS.find((t) => t.id === "disk-anomaly")!;
 
-export function AnomalyDetection() {
+export function DiskAnomalySettings() {
   const { entities, loading: loadingEntities, error: entityError } = useEntities(TAB.entityType);
   const entityIds = entities.map((e) => e.entityId);
   const { settings, setSettings, loading: loadingSettings, error: settingsError } = useSettings(TAB.schemaId, entityIds);
@@ -16,7 +16,7 @@ export function AnomalyDetection() {
   return (
     <Flex flexDirection="column" gap={16} padding={20}>
       <Flex flexDirection="column" gap={4}>
-        <Heading level={3}>Infrastructure Anomaly Settings</Heading>
+        <Heading level={3}>Disk Anomaly Settings</Heading>
         <Text textStyle="small" style={{ color: "var(--dt-colors-text-muted, #71717a)" }}>
           Hosts you have access to
           {entities.length > 0 && (

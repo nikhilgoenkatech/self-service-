@@ -1,4 +1,4 @@
-import { useCallback, useEffect, useState } from "react";
+import React, { useCallback, useEffect, useState } from "react";
 
 export interface SettingsObject {
   objectId: string;
@@ -10,6 +10,7 @@ export interface SettingsObject {
 
 interface UseSettingsResult {
   settings: Record<string, SettingsObject>;
+  setSettings: React.Dispatch<React.SetStateAction<Record<string, SettingsObject>>>;
   loading: boolean;
   error: string | null;
   refresh: () => void;
@@ -34,6 +35,7 @@ export function useSettings(
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
+
   const entityKey = entityIds.join(",");
 
   useEffect(() => {
@@ -90,5 +92,5 @@ export function useSettings(
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [schemaId, entityKey, tick]);
 
-  return { settings, loading, error, refresh };
+  return { settings, setSettings, loading, error, refresh };
 }

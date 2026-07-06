@@ -1,5 +1,6 @@
 import { credentialVaultClient } from "@dynatrace-sdk/client-classic-environment-v2";
-import { VAULT_CREDENTIAL_ID } from "./config";
+
+const VAULT_CREDENTIAL_ID = "CREDENTIALS_VAULT-511FC1F27BC482FA";
 
 interface Payload {
   schemaId: string;
@@ -23,68 +24,79 @@ async function fetchAdminToken(): Promise<string> {
   const data = await credentialVaultClient.getCredentialsDetails({
     id: VAULT_CREDENTIAL_ID,
   }) as { token?: string };
-
   if (!data.token) {
     throw new Error(`Vault credential has no token field. Ensure type=TOKEN and scope=APP_ENGINE.`);
   }
   return data.token;
 }
 
-function getClassicEnvironmentUrl(environmentUrl: string): string {
-  return environmentUrl
+function classicUrl(environmentUrl: string): string {
+  return (environmentUrl ?? "")
     .replace(/\/$/, "")
     .replace(".apps.dynatrace.com", ".live.dynatrace.com");
 }
 
 export default async function (payload: Payload): Promise<SettingsResponse> {
-  const g = globalThis as any;
-  const base = getClassicEnvironmentUrl(g.environmentUrl as string ?? "");
+  const base = classicUrl((globalThis as any).environmentUrl ?? "");
 
   try {
     const { schemaId, entityIds } = payload;
-    if (!base) {
-      throw new Error("Dynatrace environment URL is not available in the app function runtime.");
-    }
-    if (!schemaId || !Array.isArray(entityIds)) {
-      throw new Error("schemaId and entityIds are required");
-    }
+    if (!base) throw new Error("environmentUrl global is not set in this runtime.");
+    if (!schemaId || !Array.isArray(entityIds)) throw new Error("schemaId and entityIds are required");
 
     const token = await fetchAdminToken();
 
-    const results = await Promise.allSettled(
-      entityIds.map(async (entityId): Promise<SettingsEntry | null> => {
-        const url = `${base}/api/v2/settings/objects?schemaIds=${encodeURIComponent(schemaId)}&scope=${encodeURIComponent(entityId)}&pageSize=1`;
-        const res = await fetch(url, {
-          headers: { Authorization: `Api-Token ${token}` },
-        });
-        if (!res.ok) {
-          const body = await res.text();
-          throw new Error(`${entityId}: ${res.status} ${body.substring(0, 200)}`);
-        }
-        const data = await res.json() as { items: Array<{ objectId: string; schemaVersion: string; scope: string; value: Record<string, unknown> }> };
-        const item = data.items?.[0];
-        if (!item) return null;
-        return {
-          objectId: item.objectId,
-          entityId,
-          schemaVersion: item.schemaVersion ?? "",
-          scope: item.scope ?? entityId,
-          value: item.value,
-        };
-      })
-    );
+    // Fetch ALL objects for this schema in one call.
+    // This returns both the environment-level object (scope="environment") and any
+    // host-specific overrides (scope="HOST-XXXXXXXX"). We then build the map ourselves,
+    // using the HOST-specific object when it exists, falling back to the environment object.
+    const allItems: Array<{ objectId: string; schemaVersion: string; scope: string; value: Record<string, unknown> }> = [];
+    let nextPageKey: string | undefined;
+    do {
+      const url = nextPageKey
+        ? `${base}/api/v2/settings/objects?schemaIds=${encodeURIComponent(schemaId)}&pageSize=500&nextPageKey=${encodeURIComponent(nextPageKey)}`
+        : `${base}/api/v2/settings/objects?schemaIds=${encodeURIComponent(schemaId)}&pageSize=500`;
+      const res = await fetch(url, { headers: { Authorization: `Api-Token ${token}` } });
+      if (!res.ok) {
+        const body = await res.text();
+        throw new Error(`getSettings failed: ${res.status} ${body.substring(0, 300)}`);
+      }
+      const data = await res.json() as {
+        items: Array<{ objectId: string; schemaVersion: string; scope: string; value: Record<string, unknown> }>;
+        nextPageKey?: string;
+      };
+      allItems.push(...(data.items ?? []));
+      nextPageKey = data.nextPageKey;
+    } while (nextPageKey);
 
-    const errors = results
-      .filter((r): r is PromiseRejectedResult => r.status === "rejected")
-      .map(r => String(r.reason));
-    if (errors.length) throw new Error(errors.join("; "));
+    // Index all objects by scope. HOST-specific objects have scope = "HOST-XXXXXXXX".
+    const byScope = new Map<string, typeof allItems[0]>();
+    for (const item of allItems) {
+      byScope.set(item.scope, item);
+    }
 
-    return {
-      items: results
-        .filter((r): r is PromiseFulfilledResult<SettingsEntry | null> => r.status === "fulfilled")
-        .map(r => r.value)
-        .filter((v): v is SettingsEntry => v !== null),
-    };
+    console.log("[getSettings] all scopes found:", JSON.stringify([...byScope.keys()]));
+
+    // Environment-level object: scope is "environment" or the tenant/environment ID.
+    // Find it as the non-entity-type scope (anything that doesn't look like HOST-xxx).
+    const envItem = [...byScope.entries()].find(([scope]) =>
+      scope != null && !scope.match(/^[A-Z_]+-[0-9A-F]+$/)
+    )?.[1];
+
+    const items: SettingsEntry[] = entityIds.map((entityId) => {
+      // Use the HOST-specific override if it exists; otherwise fall back to environment.
+      const item = byScope.get(entityId) ?? envItem;
+      if (!item) return null as unknown as SettingsEntry;
+      return {
+        objectId: item.objectId,
+        entityId,
+        schemaVersion: item.schemaVersion ?? "",
+        scope: byScope.has(entityId) ? entityId : (envItem?.scope ?? "environment"),
+        value: item.value,
+      };
+    }).filter(Boolean);
+
+    return { items };
   } catch (err) {
     return {
       items: [],

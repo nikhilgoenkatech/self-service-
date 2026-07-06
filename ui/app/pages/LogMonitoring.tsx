@@ -37,6 +37,7 @@ export function LogMonitoring() {
         settings={settings}
         fields={TAB.fields}
         schemaId={TAB.schemaId}
+        schemaVersion={TAB.schemaVersion}
         loadingEntities={loadingEntities}
         loadingSettings={loadingSettings}
         onSaved={refresh}
