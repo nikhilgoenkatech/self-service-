@@ -3,7 +3,7 @@
   "environmentUrl": "https://hht14598.apps.dynatrace.com/",
   "app": {
     "name": "Settings Delegate",
-    "version": "0.1.18",
+    "version": "0.1.21",
     "description": "Lets read-only users view and edit curated entity settings via an admin token",
     "id": "my.self.service",
     "scopes": [
@@ -18,6 +18,14 @@
       {
         "name": "settings:schemas:read",
         "comment": "Validate settings schema IDs"
+      },
+      {
+        "name": "settings:objects:read",
+        "comment": "Read curated settings objects for visible entities"
+      },
+      {
+        "name": "settings:objects:write",
+        "comment": "Update curated settings objects through delegated app functions"
       }
     ]
   }

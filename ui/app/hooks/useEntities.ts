@@ -1,10 +1,23 @@
 import { useEffect, useState } from "react";
-import { monitoredEntitiesClient } from "@dynatrace-sdk/client-classic-environment-v2";
+import * as classicEnvironmentV2 from "@dynatrace-sdk/client-classic-environment-v2";
 
 export interface EntityItem {
   entityId: string;
   displayName: string;
 }
+
+const monitoredEntitiesClient = (
+  classicEnvironmentV2 as unknown as {
+    monitoredEntitiesClient: {
+      getEntities: (params: {
+        entitySelector: string;
+        pageSize: number;
+      }) => Promise<{
+        entities?: Array<{ entityId?: string; displayName?: string }>;
+      }>;
+    };
+  }
+).monitoredEntitiesClient;
 
 interface UseEntitiesResult {
   entities: EntityItem[];

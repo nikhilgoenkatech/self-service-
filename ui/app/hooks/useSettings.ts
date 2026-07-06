@@ -9,10 +9,15 @@ export interface SettingsObject {
 }
 
 interface UseSettingsResult {
-  settings: Record<string, SettingsObject>; // keyed by entityId
+  settings: Record<string, SettingsObject>;
   loading: boolean;
   error: string | null;
   refresh: () => void;
+}
+
+interface GetSettingsResponse {
+  items?: SettingsObject[];
+  error?: string;
 }
 
 /**
@@ -29,8 +34,6 @@ export function useSettings(
   const [tick, setTick] = useState(0);
 
   const refresh = useCallback(() => setTick((t) => t + 1), []);
-
-  // stable key so the effect doesn't re-run on every render
   const entityKey = entityIds.join(",");
 
   useEffect(() => {
@@ -49,12 +52,24 @@ export function useSettings(
         if (!res.ok) {
           const body = await res.text();
           console.error("[useSettings] function error", res.status, body);
-          throw new Error(`getSettings failed: ${res.status} — ${body}`);
+          throw new Error(`getSettings failed: ${res.status} - ${body}`);
         }
-        return res.json() as Promise<SettingsObject[]>;
+        return res.json() as Promise<GetSettingsResponse | SettingsObject[]>;
       })
-      .then((items) => {
+      .then((response) => {
         if (cancelled) return;
+
+        const items = Array.isArray(response)
+          ? response
+          : (response.items ?? []);
+        const responseError = Array.isArray(response)
+          ? undefined
+          : response.error;
+
+        if (responseError) {
+          throw new Error(responseError);
+        }
+
         const map: Record<string, SettingsObject> = {};
         for (const item of items) map[item.entityId] = item;
         setSettings(map);

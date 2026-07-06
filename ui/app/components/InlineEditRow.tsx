@@ -82,6 +82,10 @@ export function InlineEditRow({
         }),
       });
       if (!res.ok) throw new Error(await res.text());
+      const result = await res.json() as { success?: boolean; error?: string };
+      if (!result.success) {
+        throw new Error(result.error ?? "Settings update failed");
+      }
       showToast({
         title: "Saved",
         message: `Settings updated for ${entity.displayName}`,
