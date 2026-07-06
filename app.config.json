@@ -2,13 +2,23 @@
   "$schema": "./.dt-app/app.config.schema.json",
   "environmentUrl": "https://hht14598.apps.dynatrace.com/",
   "app": {
-    "name": "self-service",
-    "version": "0.0.0",
-    "description": "A starting project with routing, fetching data, and charting",
+    "name": "Settings Delegate",
+    "version": "0.1.18",
+    "description": "Lets read-only users view and edit curated entity settings via an admin token",
     "id": "my.self.service",
     "scopes": [
-      { "name": "storage:logs:read", "comment": "default template" },
-      { "name": "storage:buckets:read", "comment": "default template" }
+      {
+        "name": "environment-api:entities:read",
+        "comment": "List monitored entities scoped to the current user's IAM policies"
+      },
+      {
+        "name": "environment-api:credentials:read",
+        "comment": "App function reads admin token from Credential Vault"
+      },
+      {
+        "name": "settings:schemas:read",
+        "comment": "Validate settings schema IDs"
+      }
     ]
   }
 }
