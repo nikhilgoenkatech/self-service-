@@ -1,4 +1,4 @@
-import React, { createContext, useCallback, useContext, useState } from "react";
+import React, { createContext, useCallback, useContext, useRef, useState } from "react";
 
 export interface SessionMeta {
   ticket: string;
@@ -30,44 +30,51 @@ const AuditContext = createContext<AuditContextValue | null>(null);
 export function AuditProvider({ children }: { children: React.ReactNode }) {
   const [sessionMeta, setSessionMeta] = useState<SessionMeta | null>(null);
   const [changeLog, setChangeLog] = useState<ChangeEntry[]>([]);
+  const changeLogRef = useRef<ChangeEntry[]>([]);
+
+  const sessionMetaRef = useRef<SessionMeta | null>(null);
+
+  const setSessionMetaAndRef = useCallback((meta: SessionMeta) => {
+    sessionMetaRef.current = meta;
+    setSessionMeta(meta);
+  }, []);
 
   const appendChanges = useCallback((entries: Omit<ChangeEntry, "timestamp" | "username" | "ticket">[]) => {
     if (!entries.length) return;
-    setSessionMeta((meta) => {
-      if (!meta) return meta;
-      const timestamp = new Date().toISOString();
-      const newEntries: ChangeEntry[] = entries.map((e) => ({
-        ...e,
-        timestamp,
-        username: meta.username,
-        ticket: meta.ticket,
-      }));
-      setChangeLog((prev) => [...prev, ...newEntries]);
-      return meta;
+    const meta = sessionMetaRef.current;
+    if (!meta) return;
+    const timestamp = new Date().toISOString();
+    const newEntries: ChangeEntry[] = entries.map((e) => ({
+      ...e,
+      timestamp,
+      username: meta.username,
+      ticket: meta.ticket,
+    }));
+    setChangeLog((prev) => {
+      const updated = [...prev, ...newEntries];
+      changeLogRef.current = updated;
+      return updated;
     });
   }, []);
 
   const downloadCSV = useCallback(() => {
-    setChangeLog((log) => {
-      if (!log.length) return log;
-      const headers = ["Timestamp", "Username", "Ticket", "Host", "Host ID", "Tab", "Field", "Old Value", "New Value"];
-      const rows = log.map((e) => [
-        e.timestamp, e.username, e.ticket, e.hostName, e.hostId, e.tab, e.field, e.oldValue, e.newValue,
-      ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
-      const csv = [headers.join(","), ...rows].join("\n");
-      const blob = new Blob([csv], { type: "text/csv" });
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `settings-change-log-${new Date().toISOString().slice(0, 10)}.csv`;
-      a.click();
-      URL.revokeObjectURL(url);
-      return log;
-    });
+    const log = changeLogRef.current;
+    const headers = ["Timestamp", "Username", "Ticket", "Host", "Host ID", "Tab", "Field", "Old Value", "New Value"];
+    const rows = log.map((e) => [
+      e.timestamp, e.username, e.ticket, e.hostName, e.hostId, e.tab, e.field, e.oldValue, e.newValue,
+    ].map((v) => `"${String(v).replace(/"/g, '""')}"`).join(","));
+    const csv = [headers.join(","), ...rows].join("\n");
+    const blob = new Blob([csv], { type: "text/csv" });
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = url;
+    a.download = `settings-change-log-${new Date().toISOString().slice(0, 10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
   }, []);
 
   return (
-    <AuditContext.Provider value={{ sessionMeta, setSessionMeta, changeLog, appendChanges, downloadCSV }}>
+    <AuditContext.Provider value={{ sessionMeta, setSessionMeta: setSessionMetaAndRef, changeLog, appendChanges, downloadCSV }}>
       {children}
     </AuditContext.Provider>
   );

@@ -18,7 +18,7 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
 function DownloadLogButton() {
   const { changeLog, downloadCSV } = useAudit();
   return (
-    <Button variant="default" size="condensed" onClick={downloadCSV} disabled={changeLog.length === 0}>
+    <Button variant="default" size="condensed" onClick={downloadCSV}>
       Download change log{changeLog.length > 0 ? ` (${changeLog.length})` : ""}
     </Button>
   );
