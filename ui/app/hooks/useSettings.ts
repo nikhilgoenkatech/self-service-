@@ -74,6 +74,7 @@ export function useSettings(
 
         const map: Record<string, SettingsObject> = {};
         for (const item of items) map[item.entityId] = item;
+        console.log("[useSettings] settings map:", Object.entries(map).map(([k, v]) => ({ host: k, scope: v.scope, objectId: v.objectId })));
         setSettings(map);
       })
       .catch((err) => {
