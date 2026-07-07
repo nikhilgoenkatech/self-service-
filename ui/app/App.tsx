@@ -41,9 +41,9 @@ function AppInner() {
           <TitleBar.Subtitle>
             View and edit entity settings on behalf of read-only users
           </TitleBar.Subtitle>
-          <TitleBar.Action>
+          <TitleBar.Suffix>
             <DownloadLogButton />
-          </TitleBar.Action>
+          </TitleBar.Suffix>
         </TitleBar>
       </Page.Header>
 
