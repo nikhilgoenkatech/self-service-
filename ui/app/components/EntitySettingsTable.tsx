@@ -10,6 +10,8 @@ import { CheckmarkIcon, EditIcon, XmarkIcon } from "@dynatrace/strato-icons";
 import type { FieldDef, ThresholdDef } from "../config";
 import type { EntityItem } from "../hooks/useEntities";
 import type { SettingsObject } from "../hooks/useSettings";
+import { useAudit } from "../context/AuditContext";
+import { SessionMetaModal } from "./SessionMetaModal";
 
 type DetectionMode = "disabled" | "auto" | "custom";
 
@@ -153,8 +155,18 @@ export function EntitySettingsTable({
   const [editingEntityId, setEditingEntityId] = useState<string | null>(null);
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
+  const [pendingSave, setPendingSave] = useState(false);
+
+  const { sessionMeta, setSessionMeta, appendChanges } = useAudit();
 
   const detectionFields = useMemo(() => fields.filter((f) => f.type === "detection"), [fields]);
+
+  const tabLabel = useMemo(() => {
+    // derive a readable tab name from the schemaId
+    if (schemaId.includes("infrastructure-hosts")) return "Infrastructure Anomaly";
+    if (schemaId.includes("infrastructure-disks")) return "Disk Anomaly";
+    return schemaId;
+  }, [schemaId]);
 
   const startEdit = useCallback((entityId: string) => {
     const obj = settings[entityId];
@@ -164,14 +176,12 @@ export function EntitySettingsTable({
 
   const cancelEdit = useCallback(() => { setEditingEntityId(null); setDraft({}); }, []);
 
-  const save = useCallback(async () => {
+  const doSave = useCallback(async () => {
     if (!editingEntityId) return;
     const settingsObj = settings[editingEntityId];
     if (!settingsObj) return;
     setSaving(true);
     try {
-      // If this host already has its own settings object (not inherited from environment),
-      // pass the objectId so the API function uses PUT instead of creating a duplicate.
       const hasOwnObject = settingsObj.scope === editingEntityId;
       const res = await fetch("/api/updateSetting", {
         method: "POST",
@@ -187,13 +197,35 @@ export function EntitySettingsTable({
       if (!res.ok) throw new Error(await res.text());
       const result = (await res.json()) as { success?: boolean; error?: string; objectId?: string };
       if (!result.success) throw new Error(result.error ?? "Save failed");
-      const name = entities.find((e) => e.entityId === editingEntityId)?.displayName ?? editingEntityId;
+
+      const entity = entities.find((e) => e.entityId === editingEntityId);
+      const name = entity?.displayName ?? editingEntityId;
+
+      // Log each field that changed
+      const changes = detectionFields
+        .map((f) => {
+          const oldVal = getNestedValue(settingsObj.value, f.key);
+          const newVal = getNestedValue(draft, f.key);
+          const oldMode = getDetectionMode(oldVal);
+          const newMode = getDetectionMode(newVal);
+          if (oldMode === newMode) return null;
+          return {
+            hostName: name,
+            hostId: editingEntityId,
+            tab: tabLabel,
+            field: f.label,
+            oldValue: oldMode,
+            newValue: newMode,
+          };
+        })
+        .filter((c): c is NonNullable<typeof c> => c !== null);
+      if (changes.length) appendChanges(changes);
+
       showToast({ title: "Saved", message: `Updated settings for ${name}`, type: "success" });
-      // Update the local settings map directly — no re-fetch, so other rows are never touched.
       onSettingsUpdate(editingEntityId, {
         ...settingsObj,
         objectId: result.objectId ?? settingsObj.objectId,
-        scope: editingEntityId, // now has a host-specific override
+        scope: editingEntityId,
         value: draft,
       });
       setEditingEntityId(null);
@@ -203,7 +235,15 @@ export function EntitySettingsTable({
     } finally {
       setSaving(false);
     }
-  }, [editingEntityId, settings, schemaId, schemaVersion, draft, entities, onSettingsUpdate]);
+  }, [editingEntityId, settings, schemaId, schemaVersion, draft, entities, onSettingsUpdate, detectionFields, tabLabel, appendChanges]);
+
+  const save = useCallback(() => {
+    if (!sessionMeta) {
+      setPendingSave(true); // show modal — doSave will be called after meta is confirmed
+    } else {
+      void doSave();
+    }
+  }, [sessionMeta, doSave]);
 
   const handleModeChange = useCallback((fieldKey: string, newMode: string | null, thresholds?: ThresholdDef[]) => {
     if (!newMode) return;
@@ -336,21 +376,33 @@ export function EntitySettingsTable({
   }
 
   return (
-    <Flex flexDirection="column" gap={12}>
-      <DataTable
-        columns={columns}
-        data={entities}
-        loading={loadingSettings}
-        rowId={(row) => row.entityId}
-        style={{ width: "100%" }}
-      />
-      {editingEntityId && (
-        <CustomThresholdsPanel
-          fields={detectionFields}
-          draft={draft}
-          setDraft={setDraft}
+    <>
+      {pendingSave && (
+        <SessionMetaModal
+          onConfirm={(meta) => {
+            setSessionMeta(meta);
+            setPendingSave(false);
+            void doSave();
+          }}
+          onDismiss={() => setPendingSave(false)}
         />
       )}
-    </Flex>
+      <Flex flexDirection="column" gap={12}>
+        <DataTable
+          columns={columns}
+          data={entities}
+          loading={loadingSettings}
+          rowId={(row) => row.entityId}
+          style={{ width: "100%" }}
+        />
+        {editingEntityId && (
+          <CustomThresholdsPanel
+            fields={detectionFields}
+            draft={draft}
+            setDraft={setDraft}
+          />
+        )}
+      </Flex>
+    </>
   );
 }
