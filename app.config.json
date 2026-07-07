@@ -3,7 +3,7 @@
   "environmentUrl": "https://hht14598.apps.dynatrace.com/",
   "app": {
     "name": "Settings Delegate",
-    "version": "0.1.53",
+    "version": "0.1.54",
     "description": "Lets read-only users view and edit curated entity settings via an admin token",
     "id": "my.self.service",
     "scopes": [

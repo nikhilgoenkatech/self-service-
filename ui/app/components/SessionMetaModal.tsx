@@ -32,7 +32,7 @@ export function SessionMetaModal({ onConfirm, onDismiss }: Props) {
           />
         </FormField>
         <FormField>
-          <Label required>CIID / Username</Label>
+          <Label required>CI Name</Label>
           <TextInput
             placeholder="e.g. jsmith"
             value={username}

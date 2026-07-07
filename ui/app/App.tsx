@@ -17,10 +17,9 @@ const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
 
 function DownloadLogButton() {
   const { changeLog, downloadCSV } = useAudit();
-  if (!changeLog.length) return null;
   return (
-    <Button variant="default" size="condensed" onClick={downloadCSV}>
-      Download change log ({changeLog.length})
+    <Button variant="default" size="condensed" onClick={downloadCSV} disabled={changeLog.length === 0}>
+      Download change log{changeLog.length > 0 ? ` (${changeLog.length})` : ""}
     </Button>
   );
 }
@@ -41,9 +40,9 @@ function AppInner() {
           <TitleBar.Subtitle>
             View and edit entity settings on behalf of read-only users
           </TitleBar.Subtitle>
-          <TitleBar.Suffix>
+          <TitleBar.Action>
             <DownloadLogButton />
-          </TitleBar.Suffix>
+          </TitleBar.Action>
         </TitleBar>
       </Page.Header>
 
