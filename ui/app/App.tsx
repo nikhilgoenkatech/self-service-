@@ -5,6 +5,7 @@ import { ToastContainer } from "@dynatrace/strato-components/notifications";
 import { Link } from "react-router-dom";
 import { AnomalyDetection } from "./pages/AnomalyDetection";
 import { DiskAnomalySettings } from "./pages/DiskAnomalySettings";
+import { SyntheticConfig } from "./pages/SyntheticConfig";
 import { TABS } from "./config";
 
 const PAGE_COMPONENTS: Record<string, React.ComponentType> = {
@@ -41,6 +42,9 @@ export const App = () => {
               </Tab>
             );
           })}
+          <Tab title="Synthetic Configuration">
+            <SyntheticConfig />
+          </Tab>
         </Tabs>
       </Page.Main>
 

@@ -3,7 +3,7 @@
   "environmentUrl": "https://hht14598.apps.dynatrace.com/",
   "app": {
     "name": "Settings Delegate",
-    "version": "0.1.50",
+    "version": "0.1.51",
     "description": "Lets read-only users view and edit curated entity settings via an admin token",
     "id": "my.self.service",
     "scopes": [
@@ -26,6 +26,14 @@
       {
         "name": "settings:objects:write",
         "comment": "Update curated settings objects through delegated app functions"
+      },
+      {
+        "name": "syntheticLocations.read",
+        "comment": "Read global synthetic monitoring configuration"
+      },
+      {
+        "name": "syntheticLocations.write",
+        "comment": "Update global synthetic monitoring configuration"
       }
     ]
   }
