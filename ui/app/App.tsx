@@ -24,8 +24,18 @@ function DownloadLogButton() {
   );
 }
 
+const TAB_STORAGE_KEY = "settings-delegate-active-tab";
+
 function AppInner() {
-  const [selectedIndex, setSelectedIndex] = useState(0);
+  const [selectedIndex, setSelectedIndex] = useState<number>(() => {
+    const stored = localStorage.getItem(TAB_STORAGE_KEY);
+    return stored !== null ? Number(stored) : 0;
+  });
+
+  const handleTabChange = (index: number) => {
+    localStorage.setItem(TAB_STORAGE_KEY, String(index));
+    setSelectedIndex(index);
+  };
 
   return (
     <Page>
@@ -47,7 +57,7 @@ function AppInner() {
       </Page.Header>
 
       <Page.Main>
-        <Tabs selectedIndex={selectedIndex} onChange={setSelectedIndex}>
+        <Tabs selectedIndex={selectedIndex} onChange={handleTabChange}>
           {TABS.map((tab) => {
             const PageComponent = PAGE_COMPONENTS[tab.id] ?? (() => null);
             return (

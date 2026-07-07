@@ -201,21 +201,31 @@ export function EntitySettingsTable({
       const entity = entities.find((e) => e.entityId === editingEntityId);
       const name = entity?.displayName ?? editingEntityId;
 
-      // Log each field that changed
+      // Build a human-readable description of a detection field value
+      const describeVal = (val: unknown, fieldDef: typeof detectionFields[number]): string => {
+        const mode = getDetectionMode(val);
+        if (mode !== "custom") return mode;
+        const ct = val && typeof val === "object"
+          ? ((val as Record<string, unknown>).customThresholds as Record<string, unknown> | undefined)
+          : undefined;
+        if (!ct || !fieldDef.thresholds?.length) return "custom";
+        const parts = fieldDef.thresholds.map((t) => `${t.label}: ${ct[t.key]}${t.unit ?? ""}`);
+        return `custom (${parts.join(", ")})`;
+      };
+
+      // Log every field where anything changed (mode OR thresholds)
       const changes = detectionFields
         .map((f) => {
           const oldVal = getNestedValue(settingsObj.value, f.key);
           const newVal = getNestedValue(draft, f.key);
-          const oldMode = getDetectionMode(oldVal);
-          const newMode = getDetectionMode(newVal);
-          if (oldMode === newMode) return null;
+          if (JSON.stringify(oldVal) === JSON.stringify(newVal)) return null;
           return {
             hostName: name,
             hostId: editingEntityId,
             tab: tabLabel,
             field: f.label,
-            oldValue: oldMode,
-            newValue: newMode,
+            oldValue: describeVal(oldVal, f),
+            newValue: describeVal(newVal, f),
           };
         })
         .filter((c): c is NonNullable<typeof c> => c !== null);
