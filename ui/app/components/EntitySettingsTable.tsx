@@ -6,7 +6,7 @@ import { Text } from "@dynatrace/strato-components/typography";
 import { Button } from "@dynatrace/strato-components/buttons";
 import { FormField, Label, Select, TextInput } from "@dynatrace/strato-components/forms";
 import { showToast } from "@dynatrace/strato-components/notifications";
-import { CheckmarkIcon, EditIcon, XmarkIcon } from "@dynatrace/strato-icons";
+import { CheckmarkIcon, CheckmarkSmallIcon, EditIcon, XmarkIcon, MinusIcon, SettingIcon } from "@dynatrace/strato-icons";
 import type { FieldDef, ThresholdDef } from "../config";
 import type { EntityItem } from "../hooks/useEntities";
 import type { SettingsObject } from "../hooks/useSettings";
@@ -42,10 +42,10 @@ function getDetectionMode(val: unknown): DetectionMode {
   return det.detectionMode === "custom" ? "custom" : "auto";
 }
 
-const DOT_COLOR: Record<DetectionMode, string> = {
-  disabled: "#6b7280",
-  auto: "#10b981",
-  custom: "#f59e0b",
+const MODE_ICON: Record<DetectionMode, JSX.Element> = {
+  disabled: <MinusIcon style={{ color: "#6b7280", width: 14, height: 14, flexShrink: 0 }} />,
+  auto:     <CheckmarkSmallIcon style={{ color: "#10b981", width: 14, height: 14, flexShrink: 0 }} />,
+  custom:   <SettingIcon style={{ color: "#f59e0b", width: 14, height: 14, flexShrink: 0 }} />,
 };
 
 const MODE_LABEL: Record<DetectionMode, string> = {
@@ -63,14 +63,14 @@ function ValBadge({ mode, thresholds, val }: { mode: DetectionMode; thresholds?:
     : null;
 
   return (
-    <Flex flexDirection="column" gap={4}>
+    <Flex flexDirection="column" gap={4} style={{ justifyContent: "center" }}>
       <div style={{
-        display: "inline-flex", alignItems: "center", gap: 6,
+        display: "inline-flex", alignItems: "center", gap: 5,
         fontSize: 12, border: "0.5px solid var(--dt-colors-border-neutral-default, #3f3f46)",
-        borderRadius: 6, padding: "3px 10px", color: "var(--dt-colors-text-secondary, #a1a1aa)",
+        borderRadius: 6, padding: "3px 8px", color: "var(--dt-colors-text-secondary, #a1a1aa)",
         width: "fit-content",
       }}>
-        <span style={{ width: 8, height: 8, borderRadius: "50%", background: DOT_COLOR[mode], display: "inline-block", flexShrink: 0 }} />
+        {MODE_ICON[mode]}
         {MODE_LABEL[mode]}
       </div>
       {summary && (
@@ -369,7 +369,7 @@ export function EntitySettingsTable({
         const obj = settings[rowData.entityId];
         const isInherited = obj && obj.scope !== rowData.entityId;
         return (
-          <Flex flexDirection="column" gap={4} style={{ padding: "6px 0" }}>
+          <Flex flexDirection="column" gap={4} style={{ padding: "4px 0", justifyContent: "center" }}>
             <Flex gap={6} alignItems="flex-start">
               <Text textStyle="base-emphasized" style={{ fontSize: 13, wordBreak: "break-word", overflowWrap: "anywhere", whiteSpace: "normal", flex: 1, minWidth: 0 }}>
                 {rowData.displayName}
@@ -399,19 +399,25 @@ export function EntitySettingsTable({
           const current = getNestedValue(draft, field.key);
           const mode = getDetectionMode(current);
           return (
-            <Select value={mode} onChange={(v) => handleModeChange(field.key, v, field.thresholds)}>
-              <Select.Content>
-                <Select.Option value="disabled">Off</Select.Option>
-                <Select.Option value="auto">Auto</Select.Option>
-                <Select.Option value="custom">Custom</Select.Option>
-              </Select.Content>
-            </Select>
+            <Flex alignItems="center" style={{ height: "100%" }}>
+              <Select value={mode} onChange={(v) => handleModeChange(field.key, v, field.thresholds)}>
+                <Select.Content>
+                  <Select.Option value="disabled">Off</Select.Option>
+                  <Select.Option value="auto">Auto</Select.Option>
+                  <Select.Option value="custom">Custom</Select.Option>
+                </Select.Content>
+              </Select>
+            </Flex>
           );
         }
         if (loadingSettings) return <Skeleton width={80} height={24} />;
         const obj = settings[rowData.entityId];
         const val = obj ? getNestedValue(obj.value, field.key) : undefined;
-        return <ValBadge mode={getDetectionMode(val)} thresholds={field.thresholds} val={val} />;
+        return (
+          <Flex alignItems="center" style={{ height: "100%" }}>
+            <ValBadge mode={getDetectionMode(val)} thresholds={field.thresholds} val={val} />
+          </Flex>
+        );
       },
     })),
     {
@@ -422,7 +428,7 @@ export function EntitySettingsTable({
       cell: ({ rowData }: { rowData: EntityItem }) => {
         if (editingEntityId === rowData.entityId) {
           return (
-            <Flex gap={4}>
+            <Flex gap={4} alignItems="center" style={{ height: "100%" }}>
               <Button variant="accent" size="condensed" onClick={() => void save()} loading={saving}>
                 <Button.Prefix><CheckmarkIcon /></Button.Prefix>
                 Save
@@ -434,10 +440,12 @@ export function EntitySettingsTable({
           );
         }
         return (
-          <Button variant="default" size="condensed" onClick={() => startEdit(rowData.entityId)} disabled={!settings[rowData.entityId] || !!editingEntityId}>
-            <Button.Prefix><EditIcon /></Button.Prefix>
-            Edit
-          </Button>
+          <Flex alignItems="center" style={{ height: "100%" }}>
+            <Button variant="default" size="condensed" onClick={() => startEdit(rowData.entityId)} disabled={!settings[rowData.entityId] || !!editingEntityId}>
+              <Button.Prefix><EditIcon /></Button.Prefix>
+              Edit
+            </Button>
+          </Flex>
         );
       },
     },
