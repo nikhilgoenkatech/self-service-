@@ -16,6 +16,10 @@ export interface FieldDef {
   label: string;
   type: FieldType;
   thresholds?: ThresholdDef[];
+  // Schema-valid defaults to inject when customThresholds.eventThresholds is null/absent.
+  // Only specify this for fields where DT requires eventThresholds but stores it as null.
+  // Each field type has a different eventThresholds schema — never inject fields not in the schema.
+  eventThresholdsDefaults?: Record<string, unknown>;
 }
 
 export interface TabDef {
@@ -42,6 +46,12 @@ export const TABS: TabDef[] = [
         thresholds: [
           { key: "cpuSaturation", label: "CPU threshold", unit: "%", min: 1, max: 100, defaultValue: 95 },
         ],
+        eventThresholdsDefaults: {
+          dealertingEvaluationWindow: 5,
+          dealertingSamples: 5,
+          violatingSamples: 3,
+          violatingEvaluationWindow: 5,
+        },
       },
       {
         key: "host.highMemoryDetection",
@@ -53,6 +63,12 @@ export const TABS: TabDef[] = [
           { key: "pageFaultsPerSecondNonWindows", label: "Page faults/s (Linux)", min: 0, max: 50000, defaultValue: 1000 },
           { key: "pageFaultsPerSecondWindows", label: "Page faults/s (Windows)", min: 0, max: 50000, defaultValue: 1500 },
         ],
+        eventThresholdsDefaults: {
+          dealertingEvaluationWindow: 5,
+          dealertingSamples: 5,
+          violatingSamples: 3,
+          violatingEvaluationWindow: 5,
+        },
       },
       {
         key: "host.highGcActivityDetection",
@@ -60,18 +76,31 @@ export const TABS: TabDef[] = [
         type: "detection",
         thresholds: [
           { key: "gcTimePercentage", label: "GC time", unit: "%", min: 0, max: 100, defaultValue: 50 },
-          { key: "gcSuspensionPercentage", label: "GC suspension", unit: "%", min: 0, max: 100, defaultValue: 0 },
+          { key: "gcSuspensionPercentage", label: "GC suspension", unit: "%", min: 1, max: 100, defaultValue: 1 },
         ],
+        // DT requires eventThresholds for GC but stores it as null when not configured.
+        // GC uses the same 4-field EventThresholds schema as CPU — alertingOnMissingData
+        // and samples are NOT valid fields here (DT returns "Unknown property" for them).
+        eventThresholdsDefaults: {
+          dealertingEvaluationWindow: 5,
+          dealertingSamples: 5,
+          violatingSamples: 3,
+          violatingEvaluationWindow: 5,
+        },
       },
       {
         key: "network.highNetworkDetection",
         label: "Network Utilization",
         type: "detection",
         thresholds: [
-          { key: "utilizationPercentage", label: "Utilization", unit: "%", min: 1, max: 100, defaultValue: 80 },
           { key: "errorsPercentage", label: "Errors", unit: "%", min: 0, max: 100, defaultValue: 50 },
-          { key: "droppedPacketsPercentage", label: "Dropped packets", unit: "%", min: 0, max: 100, defaultValue: 10 },
         ],
+        eventThresholdsDefaults: {
+          dealertingEvaluationWindow: 5,
+          dealertingSamples: 5,
+          violatingSamples: 3,
+          violatingEvaluationWindow: 5,
+        },
       },
       {
         key: "network.networkDroppedPacketsDetection",
@@ -81,6 +110,12 @@ export const TABS: TabDef[] = [
           { key: "droppedPacketsPercentage", label: "Dropped packet %", unit: "%", min: 0, max: 100, defaultValue: 10 },
           { key: "totalPacketsRate", label: "Total packets rate", unit: "packets/s", min: 0, max: 100000, defaultValue: 10 },
         ],
+        eventThresholdsDefaults: {
+          dealertingEvaluationWindow: 5,
+          dealertingSamples: 5,
+          violatingSamples: 3,
+          violatingEvaluationWindow: 5,
+        },
       },
     ],
   },

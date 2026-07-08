@@ -319,7 +319,7 @@ export function SyntheticConfig() {
             columns={columns}
             data={monitors}
             rowId={(row) => row.entityId}
-            style={{ width: "100%" }}
+            style={{ width: "100%", minWidth: "100%" }}
           />
         )}
 

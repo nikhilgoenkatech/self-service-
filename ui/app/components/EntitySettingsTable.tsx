@@ -42,37 +42,45 @@ function getDetectionMode(val: unknown): DetectionMode {
   return det.detectionMode === "custom" ? "custom" : "auto";
 }
 
-
 const DOT_COLOR: Record<DetectionMode, string> = {
   disabled: "#6b7280",
   auto: "#10b981",
   custom: "#f59e0b",
 };
 
+const MODE_LABEL: Record<DetectionMode, string> = {
+  disabled: "Off",
+  auto: "Auto",
+  custom: "Custom",
+};
+
 function ValBadge({ mode, thresholds, val }: { mode: DetectionMode; thresholds?: ThresholdDef[]; val: unknown }): JSX.Element {
-  const label = mode === "disabled" ? "Off" : mode === "auto" ? "Auto" : "Custom";
   const ct = mode === "custom" && val && typeof val === "object"
     ? (val as Record<string, unknown>).customThresholds as Record<string, unknown> | undefined
     : undefined;
   const summary = ct && thresholds?.length
-    ? `${thresholds[0].label}: ${ct[thresholds[0].key]}${thresholds[0].unit ?? ""}`
+    ? thresholds.map((t) => `${t.label}: ${ct[t.key]}${t.unit ?? ""}`).join(", ")
     : null;
 
   return (
-    <div style={{
-      display: "inline-flex", alignItems: "center", gap: 5,
-      fontSize: 12, border: "0.5px solid var(--dt-colors-border-neutral-default, #3f3f46)",
-      borderRadius: 6, padding: "3px 8px", color: "var(--dt-colors-text-secondary, #a1a1aa)",
-      whiteSpace: "nowrap" as const,
-    }}>
-      <span style={{ width: 7, height: 7, borderRadius: "50%", background: DOT_COLOR[mode], display: "inline-block", flexShrink: 0 }} />
-      {label}
-      {summary && <span style={{ color: "var(--dt-colors-text-muted, #71717a)", fontSize: 11 }}>{summary}</span>}
-    </div>
+    <Flex flexDirection="column" gap={4}>
+      <div style={{
+        display: "inline-flex", alignItems: "center", gap: 6,
+        fontSize: 12, border: "0.5px solid var(--dt-colors-border-neutral-default, #3f3f46)",
+        borderRadius: 6, padding: "3px 10px", color: "var(--dt-colors-text-secondary, #a1a1aa)",
+        width: "fit-content",
+      }}>
+        <span style={{ width: 8, height: 8, borderRadius: "50%", background: DOT_COLOR[mode], display: "inline-block", flexShrink: 0 }} />
+        {MODE_LABEL[mode]}
+      </div>
+      {summary && (
+        <Text style={{ fontSize: 11, color: "var(--dt-colors-text-muted, #71717a)" }}>{summary}</Text>
+      )}
+    </Flex>
   );
 }
 
-/* Threshold panel shown below the table when any detection is in custom mode */
+/* Threshold panel shown in the expanded row during editing */
 function CustomThresholdsPanel({
   fields,
   draft,
@@ -98,7 +106,7 @@ function CustomThresholdsPanel({
       <Text textStyle="small" style={{ fontWeight: 600, fontSize: 12, display: "block", marginBottom: 10 }}>
         Custom thresholds
       </Text>
-      <div style={{ display: "flex", gap: 24, flexWrap: "wrap" }}>
+      <div style={{ display: "flex", gap: 32, flexWrap: "wrap" }}>
         {customFields.map((field) => {
           const current = getNestedValue(draft, field.key) as Record<string, unknown> | undefined;
           const ct = (current?.customThresholds as Record<string, unknown>) ?? {};
@@ -156,25 +164,44 @@ export function EntitySettingsTable({
   const [draft, setDraft] = useState<Record<string, unknown>>({});
   const [saving, setSaving] = useState(false);
   const [pendingSave, setPendingSave] = useState(false);
+  const [searchQuery, setSearchQuery] = useState("");
+  const [expandedRows, setExpandedRows] = useState<Record<string, boolean>>({});
 
   const { sessionMeta, setSessionMeta, appendChanges } = useAudit();
 
   const detectionFields = useMemo(() => fields.filter((f) => f.type === "detection"), [fields]);
 
   const tabLabel = useMemo(() => {
-    // derive a readable tab name from the schemaId
     if (schemaId.includes("infrastructure-hosts")) return "Infrastructure Anomaly";
     if (schemaId.includes("infrastructure-disks")) return "Disk Anomaly";
     return schemaId;
   }, [schemaId]);
 
+  const filteredEntities = useMemo(() => {
+    const q = searchQuery.trim().toLowerCase();
+    if (!q) return entities;
+    return entities.filter((e) => e.displayName.toLowerCase().includes(q));
+  }, [entities, searchQuery]);
+
   const startEdit = useCallback((entityId: string) => {
     const obj = settings[entityId];
     setDraft(obj ? { ...obj.value } : {});
     setEditingEntityId(entityId);
-  }, [settings]);
+    // Only expand if there are custom-threshold fields to show
+    const hasCustom = detectionFields.some((f) => {
+      const val = obj ? getNestedValue(obj.value, f.key) : undefined;
+      return getDetectionMode(val) === "custom";
+    });
+    if (hasCustom) setExpandedRows((prev) => ({ ...prev, [entityId]: true }));
+  }, [settings, detectionFields]);
 
-  const cancelEdit = useCallback(() => { setEditingEntityId(null); setDraft({}); }, []);
+  const cancelEdit = useCallback(() => {
+    setEditingEntityId((prev) => {
+      if (prev) setExpandedRows((rows) => ({ ...rows, [prev]: false }));
+      return null;
+    });
+    setDraft({});
+  }, []);
 
   const doSave = useCallback(async () => {
     if (!editingEntityId) return;
@@ -183,6 +210,68 @@ export function EntitySettingsTable({
     setSaving(true);
     try {
       const hasOwnObject = settingsObj.scope === editingEntityId;
+
+      // Sanitize detection fields before PUT:
+      // - Strip customThresholds from non-custom fields (DT stores them internally but rejects on PUT)
+      // - For custom fields: strip null values from customThresholds.
+      //   If eventThresholds was completely null/absent AND the field config provides eventThresholdsDefaults,
+      //   inject those defaults. Each detection field has a different eventThresholds schema — never add
+      //   fields not already in the stored value unless explicitly listed in eventThresholdsDefaults.
+      function stripNulls(obj: Record<string, unknown>): Record<string, unknown> {
+        const out: Record<string, unknown> = {};
+        for (const [k, v] of Object.entries(obj)) {
+          if (v === null || v === undefined) continue;
+          out[k] = typeof v === "object" && !Array.isArray(v)
+            ? stripNulls(v as Record<string, unknown>)
+            : v;
+        }
+        return out;
+      }
+      // DT's Settings API requires ALL schema fields in the PUT body — sending only managed fields
+      // causes "Must not be null" for unmanaged ones (outOfThreadsDetection, etc.).
+      // Strategy: deep-strip-nulls the full stored DT value as the base (preserving all required fields),
+      // then overlay our managed detection fields with sanitized values from draft.
+      function deepStripNulls(v: unknown): unknown {
+        if (v === null || v === undefined) return undefined;
+        if (Array.isArray(v)) return v;
+        if (typeof v === "object") {
+          const out: Record<string, unknown> = {};
+          for (const [k, val] of Object.entries(v as Record<string, unknown>)) {
+            const cleaned = deepStripNulls(val);
+            if (cleaned !== undefined) out[k] = cleaned;
+          }
+          return out;
+        }
+        return v;
+      }
+
+      // Start from the full stored value with nulls stripped (satisfies all required fields)
+      let valueToSave = (deepStripNulls(settingsObj.value) ?? {}) as Record<string, unknown>;
+
+      // Overlay each managed detection field with the sanitized draft value
+      for (const field of detectionFields) {
+        const val = getNestedValue(draft, field.key);
+        if (val === undefined || !val || typeof val !== "object") continue;
+        const det = val as Record<string, unknown>;
+        const mode = getDetectionMode(val);
+        if (mode !== "custom") {
+          const { customThresholds: _ct, ...rest } = det;
+          void _ct;
+          valueToSave = setNestedValue(valueToSave, field.key, rest);
+        } else {
+          const rawCt = (det.customThresholds && typeof det.customThresholds === "object")
+            ? det.customThresholds as Record<string, unknown>
+            : {};
+          const etWasNullOrAbsent = rawCt.eventThresholds === null || rawCt.eventThresholds === undefined;
+          const cleaned = stripNulls(rawCt);
+          if (etWasNullOrAbsent && field.eventThresholdsDefaults) {
+            cleaned.eventThresholds = { ...field.eventThresholdsDefaults };
+          }
+          valueToSave = setNestedValue(valueToSave, field.key, { ...det, customThresholds: cleaned });
+        }
+      }
+
+      console.log("[doSave] valueToSave:", JSON.stringify(valueToSave, null, 2));
       const res = await fetch("/api/updateSetting", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -190,7 +279,7 @@ export function EntitySettingsTable({
           schemaId,
           schemaVersion: settingsObj.schemaVersion || schemaVersion,
           scope: editingEntityId,
-          value: draft,
+          value: valueToSave,
           ...(hasOwnObject ? { objectId: settingsObj.objectId } : {}),
         }),
       });
@@ -201,7 +290,6 @@ export function EntitySettingsTable({
       const entity = entities.find((e) => e.entityId === editingEntityId);
       const name = entity?.displayName ?? editingEntityId;
 
-      // Build a human-readable description of a detection field value
       const describeVal = (val: unknown, fieldDef: typeof detectionFields[number]): string => {
         const mode = getDetectionMode(val);
         if (mode !== "custom") return mode;
@@ -213,19 +301,14 @@ export function EntitySettingsTable({
         return `custom (${parts.join(", ")})`;
       };
 
-      // Log every field where anything changed (mode OR thresholds)
       const changes = detectionFields
         .map((f) => {
           const oldVal = getNestedValue(settingsObj.value, f.key);
           const newVal = getNestedValue(draft, f.key);
           if (JSON.stringify(oldVal) === JSON.stringify(newVal)) return null;
           return {
-            hostName: name,
-            hostId: editingEntityId,
-            tab: tabLabel,
-            field: f.label,
-            oldValue: describeVal(oldVal, f),
-            newValue: describeVal(newVal, f),
+            hostName: name, hostId: editingEntityId, tab: tabLabel,
+            field: f.label, oldValue: describeVal(oldVal, f), newValue: describeVal(newVal, f),
           };
         })
         .filter((c): c is NonNullable<typeof c> => c !== null);
@@ -236,8 +319,9 @@ export function EntitySettingsTable({
         ...settingsObj,
         objectId: result.objectId ?? settingsObj.objectId,
         scope: editingEntityId,
-        value: draft,
+        value: valueToSave,
       });
+      setExpandedRows((rows) => ({ ...rows, [editingEntityId]: false }));
       setEditingEntityId(null);
       setDraft({});
     } catch (err) {
@@ -248,18 +332,13 @@ export function EntitySettingsTable({
   }, [editingEntityId, settings, schemaId, schemaVersion, draft, entities, onSettingsUpdate, detectionFields, tabLabel, appendChanges]);
 
   const save = useCallback(() => {
-    if (!sessionMeta) {
-      setPendingSave(true); // show modal — doSave will be called after meta is confirmed
-    } else {
-      void doSave();
-    }
+    if (!sessionMeta) { setPendingSave(true); } else { void doSave(); }
   }, [sessionMeta, doSave]);
 
   const handleModeChange = useCallback((fieldKey: string, newMode: string | null, thresholds?: ThresholdDef[]) => {
     if (!newMode) return;
     setDraft((d) => {
       const current = getNestedValue(d, fieldKey) as Record<string, unknown> | undefined;
-      // Always strip customThresholds when leaving custom mode
       const { customThresholds: _ct, ...base } = (current ?? {}) as Record<string, unknown>;
       void _ct;
       if (newMode === "disabled") {
@@ -273,105 +352,96 @@ export function EntitySettingsTable({
         return setNestedValue(d, fieldKey, { ...base, enabled: true, detectionMode: "custom", customThresholds: { ...defaults, ...existing } });
       }
     });
-  }, []);
+    // Auto-expand the row for threshold editing when switching to custom
+    if (newMode === "custom" && editingEntityId) {
+      setExpandedRows((prev) => ({ ...prev, [editingEntityId]: true }));
+    }
+  }, [editingEntityId]);
 
   // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const columns = useMemo((): DataTableColumnDef<EntityItem, any>[] => {
-    const isEditing = (id: string) => id === editingEntityId;
-
-    return [
-      {
-        id: "entity",
-        header: "Host",
-        accessor: "displayName" as const,
-        width: 220,
-        cell: ({ rowData }: { rowData: EntityItem }) => {
-          const obj = settings[rowData.entityId];
-          const isInherited = obj && obj.scope !== rowData.entityId;
-          return (
-            <Flex flexDirection="column" gap={2} style={{ padding: "6px 0", minWidth: 0 }}>
-              <Flex gap={6} alignItems="center">
-                <Text textStyle="base-emphasized" style={{ fontSize: 13, wordBreak: "break-word", overflowWrap: "anywhere" }}>
-                  {rowData.displayName}
-                </Text>
-                {isInherited && (
-                  <span style={{
-                    fontSize: 10, border: "0.5px solid var(--dt-colors-border-neutral-default, #3f3f46)",
-                    borderRadius: 4, padding: "1px 5px", color: "var(--dt-colors-text-muted, #71717a)",
-                    whiteSpace: "nowrap" as const, flexShrink: 0,
-                  }}>
-                    Inherited
-                  </span>
-                )}
-              </Flex>
-              <Text textStyle="small" style={{ fontSize: 11, color: "var(--dt-colors-text-muted, #71717a)", fontFamily: "monospace", wordBreak: "break-all" }}>
-                {rowData.entityId}
+  const columns = useMemo((): DataTableColumnDef<EntityItem, any>[] => [
+    {
+      id: "entity",
+      header: "Host",
+      accessor: "displayName" as const,
+      width: 260,
+      cell: ({ rowData }: { rowData: EntityItem }) => {
+        const obj = settings[rowData.entityId];
+        const isInherited = obj && obj.scope !== rowData.entityId;
+        return (
+          <Flex flexDirection="column" gap={4} style={{ padding: "6px 0" }}>
+            <Flex gap={6} alignItems="flex-start">
+              <Text textStyle="base-emphasized" style={{ fontSize: 13, wordBreak: "break-word", overflowWrap: "anywhere", whiteSpace: "normal", flex: 1, minWidth: 0 }}>
+                {rowData.displayName}
               </Text>
+              {isInherited && (
+                <span style={{ fontSize: 10, border: "0.5px solid var(--dt-colors-border-neutral-default, #3f3f46)", borderRadius: 4, padding: "1px 5px", color: "var(--dt-colors-text-muted, #71717a)", whiteSpace: "nowrap" as const, flexShrink: 0, marginTop: 2 }}>
+                  Inherited
+                </span>
+              )}
+            </Flex>
+            <Text textStyle="small" style={{ fontSize: 11, color: "var(--dt-colors-text-muted, #71717a)", fontFamily: "monospace", wordBreak: "break-all" }}>
+              {rowData.entityId}
+            </Text>
+          </Flex>
+        );
+      },
+    },
+    // One column per detection field
+    ...detectionFields.map((field) => ({
+      id: field.key,
+      header: field.label,
+      accessor: "entityId" as const,
+      width: "auto" as const,
+      cell: ({ rowData }: { rowData: EntityItem }) => {
+        const isEditing = editingEntityId === rowData.entityId;
+        if (isEditing) {
+          const current = getNestedValue(draft, field.key);
+          const mode = getDetectionMode(current);
+          return (
+            <Select value={mode} onChange={(v) => handleModeChange(field.key, v, field.thresholds)}>
+              <Select.Content>
+                <Select.Option value="disabled">Off</Select.Option>
+                <Select.Option value="auto">Auto</Select.Option>
+                <Select.Option value="custom">Custom</Select.Option>
+              </Select.Content>
+            </Select>
+          );
+        }
+        if (loadingSettings) return <Skeleton width={80} height={24} />;
+        const obj = settings[rowData.entityId];
+        const val = obj ? getNestedValue(obj.value, field.key) : undefined;
+        return <ValBadge mode={getDetectionMode(val)} thresholds={field.thresholds} val={val} />;
+      },
+    })),
+    {
+      id: "actions",
+      header: "",
+      accessor: "entityId" as const,
+      width: 140,
+      cell: ({ rowData }: { rowData: EntityItem }) => {
+        if (editingEntityId === rowData.entityId) {
+          return (
+            <Flex gap={4}>
+              <Button variant="accent" size="condensed" onClick={() => void save()} loading={saving}>
+                <Button.Prefix><CheckmarkIcon /></Button.Prefix>
+                Save
+              </Button>
+              <Button variant="default" size="condensed" onClick={cancelEdit} disabled={saving}>
+                <Button.Prefix><XmarkIcon /></Button.Prefix>
+              </Button>
             </Flex>
           );
-        },
+        }
+        return (
+          <Button variant="default" size="condensed" onClick={() => startEdit(rowData.entityId)} disabled={!settings[rowData.entityId] || !!editingEntityId}>
+            <Button.Prefix><EditIcon /></Button.Prefix>
+            Edit
+          </Button>
+        );
       },
-      ...detectionFields.map((field) => ({
-        id: field.key,
-        header: field.label,
-        accessor: "entityId" as const,
-        width: "auto" as const,
-        cell: ({ rowData }: { rowData: EntityItem }) => {
-          const obj = settings[rowData.entityId];
-          if (isEditing(rowData.entityId)) {
-            const current = getNestedValue(draft, field.key);
-            const mode = getDetectionMode(current);
-            return (
-              <Select
-                value={mode}
-                onChange={(v) => handleModeChange(field.key, v, field.thresholds)}
-              >
-                <Select.Content>
-                  <Select.Option value="disabled">Disabled</Select.Option>
-                  <Select.Option value="auto">Auto</Select.Option>
-                  <Select.Option value="custom">Custom</Select.Option>
-                </Select.Content>
-              </Select>
-            );
-          }
-          const val = obj ? getNestedValue(obj.value, field.key) : undefined;
-          return <ValBadge mode={getDetectionMode(val)} thresholds={field.thresholds} val={val} />;
-        },
-      })),
-      {
-        id: "actions",
-        header: "",
-        accessor: "entityId" as const,
-        width: 130,
-        cell: ({ rowData }: { rowData: EntityItem }) => {
-          if (isEditing(rowData.entityId)) {
-            return (
-              <Flex gap={4}>
-                <Button variant="accent" size="condensed" onClick={() => void save()} loading={saving}>
-                  <Button.Prefix><CheckmarkIcon /></Button.Prefix>
-                  Save
-                </Button>
-                <Button variant="default" size="condensed" onClick={cancelEdit} disabled={saving}>
-                  <Button.Prefix><XmarkIcon /></Button.Prefix>
-                </Button>
-              </Flex>
-            );
-          }
-          return (
-            <Button
-              variant="default"
-              size="condensed"
-              onClick={() => startEdit(rowData.entityId)}
-              disabled={!settings[rowData.entityId]}
-            >
-              <Button.Prefix><EditIcon /></Button.Prefix>
-              Edit
-            </Button>
-          );
-        },
-      },
-    ];
-  }, [settings, detectionFields, editingEntityId, draft, saving, save, startEdit, cancelEdit, handleModeChange]);
+    },
+  ], [settings, detectionFields, editingEntityId, draft, saving, save, startEdit, cancelEdit, handleModeChange, loadingSettings]);
 
   if (loadingEntities) {
     return (
@@ -385,33 +455,50 @@ export function EntitySettingsTable({
     return <Text>No entities visible to your account. IAM policies may restrict your view.</Text>;
   }
 
+  const hasAnyCustom = editingEntityId !== null && detectionFields.some((f) => {
+    const val = getNestedValue(draft, f.key);
+    return getDetectionMode(val) === "custom";
+  });
+
   return (
     <>
       {pendingSave && (
         <SessionMetaModal
-          onConfirm={(meta) => {
-            setSessionMeta(meta);
-            setPendingSave(false);
-            void doSave();
-          }}
+          onConfirm={(meta) => { setSessionMeta(meta); setPendingSave(false); void doSave(); }}
           onDismiss={() => setPendingSave(false)}
         />
       )}
       <Flex flexDirection="column" gap={12}>
+        <div style={{ maxWidth: 360 }}>
+          <TextInput placeholder="Search hosts..." value={searchQuery} onChange={setSearchQuery} />
+        </div>
+
+        {filteredEntities.length === 0 && searchQuery && (
+          <Text style={{ color: "var(--dt-colors-text-muted, #71717a)", fontSize: 13 }}>
+            No hosts match "{searchQuery}"
+          </Text>
+        )}
+
         <DataTable
           columns={columns}
-          data={entities}
+          data={filteredEntities}
           loading={loadingSettings}
           rowId={(row) => row.entityId}
-          style={{ width: "100%" }}
-        />
-        {editingEntityId && (
-          <CustomThresholdsPanel
-            fields={detectionFields}
-            draft={draft}
-            setDraft={setDraft}
-          />
-        )}
+          style={{ width: "100%", minWidth: "100%" }}
+        >
+          {/* Expandable row shows threshold panel — only when editing a custom-mode field */}
+          <DataTable.ExpandableRow
+            expandedRows={expandedRows}
+            onExpandedRowsChange={setExpandedRows}
+            disableExpand={(row: EntityItem) => !hasAnyCustom || editingEntityId !== row.entityId}
+          >
+            {({ row }: { row: EntityItem }) => (
+              <div style={{ padding: "12px 16px" }}>
+                <CustomThresholdsPanel fields={detectionFields} draft={draft} setDraft={setDraft} />
+              </div>
+            )}
+          </DataTable.ExpandableRow>
+        </DataTable>
       </Flex>
     </>
   );

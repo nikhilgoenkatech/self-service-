@@ -1,5 +1,5 @@
 import React, { useState } from "react";
-import { Page, TitleBar, AppHeader } from "@dynatrace/strato-components/layouts";
+import { PageLayout, TitleBar, AppHeader } from "@dynatrace/strato-components/layouts";
 import { Tabs, Tab } from "@dynatrace/strato-components/navigation";
 import { ToastContainer } from "@dynatrace/strato-components/notifications";
 import { Button } from "@dynatrace/strato-components/buttons";
@@ -38,8 +38,8 @@ function AppInner() {
   };
 
   return (
-    <Page>
-      <Page.Header>
+    <PageLayout>
+      <PageLayout.Header>
         <AppHeader>
           <AppHeader.Navigation>
             <AppHeader.Logo as={Link} to="/" />
@@ -54,10 +54,10 @@ function AppInner() {
             <DownloadLogButton />
           </TitleBar.Action>
         </TitleBar>
-      </Page.Header>
+      </PageLayout.Header>
 
-      <Page.Main>
-        <Tabs selectedIndex={selectedIndex} onChange={handleTabChange}>
+      <PageLayout.Content>
+        <Tabs selectedIndex={selectedIndex} onChange={handleTabChange} style={{ width: "100%" }}>
           {TABS.map((tab) => {
             const PageComponent = PAGE_COMPONENTS[tab.id] ?? (() => null);
             return (
@@ -70,10 +70,10 @@ function AppInner() {
             <SyntheticConfig />
           </Tab>
         </Tabs>
-      </Page.Main>
+      </PageLayout.Content>
 
       <ToastContainer />
-    </Page>
+    </PageLayout>
   );
 }
 
