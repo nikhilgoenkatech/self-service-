@@ -1,0 +1,61 @@
+# One shared image, five independent processes.
+x-common: &common
+  image: payments-demo:local
+  build: .
+  restart: unless-stopped
+  healthcheck:
+    test: ["CMD", "python", "-c", "import urllib.request; urllib.request.urlopen('http://localhost:8080/health', timeout=2)"]
+    interval: 10s
+    timeout: 3s
+    retries: 3
+    start_period: 10s
+x-env: &env
+  OTEL_EXPORTER_OTLP_ENDPOINT: ${OTEL_EXPORTER_OTLP_ENDPOINT:-}
+  OTEL_EXPORTER_OTLP_HEADERS: ${OTEL_EXPORTER_OTLP_HEADERS:-}
+services:
+  payment-generator:
+    <<: *common
+    environment:
+      <<: *env
+      SERVICE: generator
+      NEXT_SERVICE_URL: http://payment-channel:8080
+      TRANSACTIONS_PER_MINUTE: ${TRANSACTIONS_PER_MINUTE:-10}
+      PAYMENT_TYPE_WEIGHTS: ${PAYMENT_TYPE_WEIGHTS:-40,25,25,10}
+      SCENARIO_WEIGHTS: ${SCENARIO_WEIGHTS:-95,3,2}
+    ports:
+      - "127.0.0.1:8080:8080"
+    depends_on:
+      payment-channel:
+        condition: service_healthy
+  payment-channel:
+    <<: *common
+    environment:
+      <<: *env
+      SERVICE: channel
+      NEXT_SERVICE_URL: http://payment-hub:8080
+    depends_on:
+      payment-hub:
+        condition: service_healthy
+  payment-hub:
+    <<: *common
+    environment:
+      <<: *env
+      SERVICE: hub
+      NEXT_SERVICE_URL: http://payment-processor:8080
+    depends_on:
+      payment-processor:
+        condition: service_healthy
+  payment-processor:
+    <<: *common
+    environment:
+      <<: *env
+      SERVICE: processor
+      NEXT_SERVICE_URL: http://payment-settlement:8080
+    depends_on:
+      payment-settlement:
+        condition: service_healthy
+  payment-settlement:
+    <<: *common
+    environment:
+      <<: *env
+      SERVICE: settlement

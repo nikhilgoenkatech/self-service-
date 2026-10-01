@@ -1,0 +1,383 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: payments-demo-config
+data:
+  TRANSACTIONS_PER_MINUTE: "10"
+  PAYMENT_TYPE_WEIGHTS: "40,25,25,10"
+  SCENARIO_WEIGHTS: "95,3,2"
+  # Optional existing collector base URL, e.g. http://otel-collector:4318
+  OTEL_EXPORTER_OTLP_ENDPOINT: ""
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-generator
+  labels:
+    app.kubernetes.io/part-of: payments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-generator
+  template:
+    metadata:
+      labels:
+        app: payment-generator
+        app.kubernetes.io/part-of: payments-demo
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: payment-generator
+          image: payments-demo:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: payments-demo-config
+          env:
+            - name: SERVICE
+              value: generator
+            - name: NEXT_SERVICE_URL
+              value: http://payment-channel:8080
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-generator
+spec:
+  selector:
+    app: payment-generator
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-channel
+  labels:
+    app.kubernetes.io/part-of: payments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-channel
+  template:
+    metadata:
+      labels:
+        app: payment-channel
+        app.kubernetes.io/part-of: payments-demo
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: payment-channel
+          image: payments-demo:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: payments-demo-config
+          env:
+            - name: SERVICE
+              value: channel
+            - name: NEXT_SERVICE_URL
+              value: http://payment-hub:8080
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-channel
+spec:
+  selector:
+    app: payment-channel
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-hub
+  labels:
+    app.kubernetes.io/part-of: payments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-hub
+  template:
+    metadata:
+      labels:
+        app: payment-hub
+        app.kubernetes.io/part-of: payments-demo
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: payment-hub
+          image: payments-demo:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: payments-demo-config
+          env:
+            - name: SERVICE
+              value: hub
+            - name: NEXT_SERVICE_URL
+              value: http://payment-processor:8080
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-hub
+spec:
+  selector:
+    app: payment-hub
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-processor
+  labels:
+    app.kubernetes.io/part-of: payments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-processor
+  template:
+    metadata:
+      labels:
+        app: payment-processor
+        app.kubernetes.io/part-of: payments-demo
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: payment-processor
+          image: payments-demo:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: payments-demo-config
+          env:
+            - name: SERVICE
+              value: processor
+            - name: NEXT_SERVICE_URL
+              value: http://payment-settlement:8080
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-processor
+spec:
+  selector:
+    app: payment-processor
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
+---
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: payment-settlement
+  labels:
+    app.kubernetes.io/part-of: payments-demo
+spec:
+  replicas: 1
+  selector:
+    matchLabels:
+      app: payment-settlement
+  template:
+    metadata:
+      labels:
+        app: payment-settlement
+        app.kubernetes.io/part-of: payments-demo
+    spec:
+      terminationGracePeriodSeconds: 30
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 10001
+        runAsGroup: 10001
+        seccompProfile:
+          type: RuntimeDefault
+      containers:
+        - name: payment-settlement
+          image: payments-demo:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8080
+          envFrom:
+            - configMapRef:
+                name: payments-demo-config
+          env:
+            - name: SERVICE
+              value: settlement
+          resources:
+            requests:
+              cpu: 25m
+              memory: 64Mi
+            limits:
+              cpu: 250m
+              memory: 192Mi
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop: ["ALL"]
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 2
+            periodSeconds: 5
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8080
+            initialDelaySeconds: 10
+            periodSeconds: 10
+---
+apiVersion: v1
+kind: Service
+metadata:
+  name: payment-settlement
+spec:
+  selector:
+    app: payment-settlement
+  ports:
+    - port: 8080
+      targetPort: 8080
+  type: ClusterIP
